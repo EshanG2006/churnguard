@@ -1,0 +1,14 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+.env
+
+# ML model files (optional - see note below)
+backend-ml/models/*.pkl
+
+# OS
+.DS_Store

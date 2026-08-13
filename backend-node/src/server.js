@@ -1,0 +1,214 @@
+import express from "express";
+import cors from "cors";
+import mongoose from "mongoose";
+import "dotenv/config";
+import Customer from "./models/Customer.js";
+import PDFDocument from "pdfkit";
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/churnguard";
+const PORT = process.env.PORT || 4000;
+
+mongoose
+  .connect(MONGO_URI)
+  .then(() => console.log("MongoDB connected"))
+  .catch((err) => console.error("MongoDB connection error:", err));
+
+// GET /api/customers - list all customers, sorted by churn risk
+// descending by default (so highest-risk customers surface first,
+// matching how a retention team would actually want to triage this).
+app.get("/api/customers", async (req, res) => {
+  try {
+    const { sortBy = "churnProbability", order = "desc", riskLevel } = req.query;
+    const filter = riskLevel ? { riskLevel } : {};
+    const sortOrder = order === "asc" ? 1 : -1;
+
+    const customers = await Customer.find(filter).sort({ [sortBy]: sortOrder });
+    res.json(customers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/customers/:id - single customer detail (used later by the
+// what-if simulator, which needs the raw feature values to re-score).
+app.get("/api/customers/:id", async (req, res) => {
+  try {
+    const customer = await Customer.findById(req.params.id);
+    if (!customer) return res.status(404).json({ error: "Not found" });
+    res.json(customer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.get("/api/report", async (req, res) => {
+  try {
+    const customers = await Customer.find()
+      .sort({ churnProbability: -1 });
+
+    const total = customers.length;
+
+    const high = customers.filter(
+      c => c.riskLevel === "High"
+    ).length;
+
+    const medium = customers.filter(
+      c => c.riskLevel === "Medium"
+    ).length;
+
+    const low = customers.filter(
+      c => c.riskLevel === "Low"
+    ).length;
+
+    const avgRisk =
+      total > 0
+        ? customers.reduce(
+            (sum, c) => sum + (c.churnProbability || 0),
+            0
+          ) / total
+        : 0;
+
+    const revenueAtRisk = customers
+      .filter(c => c.riskLevel === "High")
+      .reduce(
+        (sum, c) => sum + (c.monthlyCharges || 0),
+        0
+      );
+
+    const doc = new PDFDocument({
+      margin: 50,
+      size: "A4",
+    });
+
+    res.setHeader("Content-Type", "application/pdf");
+
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="ChurnGuard_Report.pdf"'
+    );
+
+    doc.pipe(res);
+
+    // =========================
+    // HEADER
+    // =========================
+
+    doc
+      .fontSize(28)
+      .fillColor("#ff481d")
+      .text("ChurnGuard");
+
+    doc
+      .fontSize(12)
+      .fillColor("#555")
+      .text("Customer Churn Risk Intelligence Report");
+
+    doc.moveDown();
+
+    doc
+      .fontSize(10)
+      .fillColor("#777")
+      .text(`Generated: ${new Date().toLocaleString()}`);
+
+    doc.moveDown(2);
+
+    // =========================
+    // EXECUTIVE SUMMARY
+    // =========================
+
+    doc
+      .fontSize(18)
+      .fillColor("#111")
+      .text("Executive Summary");
+
+    doc.moveDown();
+
+    doc
+      .fontSize(12)
+      .fillColor("#333")
+      .text(`Total Customers: ${total}`)
+      .text(`High Risk Customers: ${high}`)
+      .text(`Medium Risk Customers: ${medium}`)
+      .text(`Low Risk Customers: ${low}`)
+      .text(`Average Churn Risk: ${(avgRisk * 100).toFixed(1)}%`)
+      .text(
+        `High-Risk Monthly Revenue Exposure: $${revenueAtRisk.toFixed(2)}`
+      );
+
+    doc.moveDown(2);
+
+    // =========================
+    // MODEL INFORMATION
+    // =========================
+
+    doc
+      .fontSize(18)
+      .fillColor("#111")
+      .text("Production ML Model");
+
+    doc.moveDown();
+
+    doc
+      .fontSize(12)
+      .fillColor("#333")
+      .text("Model: XGBoost")
+      .text("Purpose: Predict customers at risk of churn")
+      .text("Risk ranking: Highest probability first");
+
+    doc.moveDown(2);
+
+    // =========================
+    // HIGH-RISK CUSTOMERS
+    // =========================
+
+    doc
+      .fontSize(18)
+      .fillColor("#111")
+      .text("Highest Risk Customers");
+
+    doc.moveDown();
+
+    const topCustomers = customers.slice(0, 15);
+
+    topCustomers.forEach((customer, index) => {
+      doc
+        .fontSize(11)
+        .fillColor("#222")
+        .text(
+          `${index + 1}. ${customer.customerRef} | ` +
+          `Risk: ${(customer.churnProbability * 100).toFixed(1)}% | ` +
+          `Level: ${customer.riskLevel} | ` +
+          `Monthly: $${(customer.monthlyCharges || 0).toFixed(2)}`
+        );
+
+      doc.moveDown(0.4);
+    });
+
+    doc.moveDown();
+
+    // =========================
+    // FOOTER
+    // =========================
+
+    doc
+      .fontSize(9)
+      .fillColor("#777")
+      .text(
+        "Generated by ChurnGuard — Customer Retention Intelligence Platform"
+      );
+
+    doc.end();
+
+  } catch (err) {
+    console.error("Report generation error:", err);
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Failed to generate report",
+      });
+    }
+  }
+});
+app.listen(PORT, () => console.log(`ChurnGuard API running on port ${PORT}`));

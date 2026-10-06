@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import CustomerTable from './components/CustomerTable.jsx'
+import CustomerDetails from './components/CustomerDetails.jsx'
+import KpiCard from "@/components/KpiCard";
 const API_BASE = 'http://localhost:4000/api'
 export default function App() {
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [riskFilter, setRiskFilter] = useState('All')
+  const [selectedCustomer, setSelectedCustomer] = useState(null)
   async function fetchCustomers() {
     setLoading(true)
     setError(null)
@@ -324,10 +327,20 @@ export default function App() {
           {loading && <div className="loading">Loading customers...</div>}
           {error && <div className="error">⚠ {error}</div>}
           {!loading && !error && (
-            <CustomerTable customers={customers} />
+            <CustomerTable
+  customers={customers}
+  onView={setSelectedCustomer}
+/>
           )}
         </section>
       </main>
+      {selectedCustomer && (
+  <CustomerDetails
+    customerId={selectedCustomer}
+    onClose={() => setSelectedCustomer(null)}
+  />
+)}
     </div>
-  )
+  
+)
 }

@@ -9,7 +9,7 @@ const COLUMNS = [
   { key: 'riskLevel', label: 'Risk Level' },
 ]
 
-export default function CustomerTable({ customers }) {
+export default function CustomerTable({ customers,onView }) {
   const [sortKey, setSortKey] = useState('churnProbability')
   const [sortDir, setSortDir] = useState('desc')
 
@@ -100,9 +100,12 @@ export default function CustomerTable({ customers }) {
                 </td>
 
                 <td>
-                  <button className="view-btn">
-                    ◉ View
-                  </button>
+                  <button
+  className="view-btn"
+  onClick={() => onView(c._id)}
+>
+  ◉ View
+</button>
                 </td>
 
               </tr>
